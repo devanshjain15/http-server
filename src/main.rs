@@ -6,8 +6,13 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
     let mut buffer = [0; 1024];
     // copying raw bytes
     stream.read(&mut buffer)?;
-    // println!("{}", String::from_utf8_lossy(&buffer));
+    let request = String::from_utf8_lossy(&buffer); 
 
+    // parsing 
+    let (method, path, version) = parse_request_line(&request); 
+    println!("{method}, {path}, {version}"); 
+
+    // sending http response 
     let status = "HTTP/1.1 200 OK"; 
     let contents = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<title>Hello World</title>\n</head>\n<body>\n<h1>Hello from the server!</h1>\n</body>\n</html>";
     let content_len = contents.len(); 
@@ -16,6 +21,13 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
     );
     stream.write_all(response.as_bytes())?; 
     Ok(())
+}
+
+fn parse_request_line(request: &str) -> (&str, &str, &str) { 
+    // method, path, version
+    let line= request.lines().next().unwrap(); 
+    let first_line: Vec<&str> = line.split_whitespace().collect(); 
+    (first_line[0], first_line[1], first_line[2]) 
 }
 
 fn main() -> std::io::Result<()> {
