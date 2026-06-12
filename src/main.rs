@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 struct Request {
     pub method: String,
@@ -122,17 +125,32 @@ fn main() -> std::io::Result<()> {
     let mut routes: HashMap<String, fn(&Request) -> Response> = HashMap::new();
     routes.insert("GET#/".to_string(), handle_root);
     routes.insert("GET#/about".to_string(), handle_about);
+    let routes = Arc::new(routes); 
 
+    let mut handles = vec![];
     // accept established connections
     for stream in listener.incoming() {
-        let stream = stream.unwrap(); 
+        // getting shared reference for the routes_map
+        let routes_clone = Arc::clone(&routes);
 
-        // reading + parsing request
-        let request = Request::new(&stream); 
-        // routing
-        let response = router(&request, &routes);
-        // responding 
-        response.write_all(&stream)?;
+        // creating a new thread
+        let handle = thread::spawn( move || { 
+            let stream = stream.unwrap(); 
+    
+            // reading + parsing request
+            let request = Request::new(&stream); 
+            // routing
+            let response = router(&request, &routes_clone);
+
+            // responding 
+            response.write_all(&stream).unwrap();
+        });
+        handles.push(handle);
+    }
+
+    // wait for all the thread to complete execution
+    for handle in handles { 
+        handle.join().unwrap(); 
     }
 
     Ok(())
