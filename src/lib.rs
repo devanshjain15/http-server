@@ -31,12 +31,15 @@ impl ThreadPool {
         }
     }
 
-    pub fn execute(&mut self, job: Job) { 
+    pub fn execute(&self, job: Job) { 
         self.sender.send(Message::NewJob(job)).unwrap(); 
     }
 
     fn drop(&mut self) { 
-        self.sender.send(Message::Terminate).unwrap(); 
+        for _ in 0..self.size { 
+            self.sender.send(Message::Terminate).unwrap(); 
+        }
+        
         for worker in &mut self.workers { 
             println!("Shutting down Worker-{}", worker.id);
             // taking thread out of worker with the help of take() on Option which replaces Some(thread) with None in Worker
