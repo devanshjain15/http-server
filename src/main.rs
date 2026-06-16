@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+use http_server::ThreadPool; 
 
 struct Request {
     pub method: String,
@@ -95,9 +94,18 @@ impl Response {
     }
 }
 
+
+fn handle_root(request: &Request) -> Response {
+    Response::new(request.version.to_string(), 200, "Ok".to_string(), "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<title>Hello World</title>\n</head>\n<body>\n<h1>Hello from the server!</h1>\n</body>\n</html>\n".to_string())
+}
+
+fn handle_about(request: &Request) -> Response {
+    Response::new(request.version.to_string(), 200, "OK".to_string(), "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<title>About</title>\n</head>\n<body>\n<h1>About Page</h1>\n<p>This is a simple HTTP server implemented in Rust.</p>\n</body>\n</html>\n".to_string())
+}
+
 fn router(
     request: &Request,
-    routes: &HashMap<String, fn(&Request) -> Response>,
+    routes: &HashMap<String, fn(&Request) -> Response>
 ) -> Response {
     let k = format!("{}#{}", request.method, request.path);
     if routes.contains_key(&k) {
@@ -108,12 +116,16 @@ fn router(
     }
 }
 
-fn handle_root(request: &Request) -> Response {
-    Response::new(request.version.to_string(), 200, "Ok".to_string(), "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<title>Hello World</title>\n</head>\n<body>\n<h1>Hello from the server!</h1>\n</body>\n</html>\n".to_string())
-}
+fn handle_client(stream: TcpStream, routes: Arc<HashMap<String, fn(&Request) -> Response>>) { 
+    let stream = stream; 
+    
+    // reading + parsing request
+    let request = Request::new(&stream); 
+    // routing
+    let response = router(&request, &routes);
 
-fn handle_about(request: &Request) -> Response {
-    Response::new(request.version.to_string(), 200, "OK".to_string(), "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<title>About</title>\n</head>\n<body>\n<h1>About Page</h1>\n<p>This is a simple HTTP server implemented in Rust.</p>\n</body>\n</html>\n".to_string())
+    // responding 
+    response.write_all(&stream).unwrap();
 }
 
 fn main() -> std::io::Result<()> {
@@ -121,37 +133,23 @@ fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8000")?;
     println!("The server is up at 127.0.0.1:8000");
 
+    // creating ThreadPool 
+    let mut pool = ThreadPool::new(3); 
+
     // routing stuff
     let mut routes: HashMap<String, fn(&Request) -> Response> = HashMap::new();
     routes.insert("GET#/".to_string(), handle_root);
     routes.insert("GET#/about".to_string(), handle_about);
     let routes = Arc::new(routes); 
 
-    let mut handles = vec![];
     // accept established connections
     for stream in listener.incoming() {
-        // getting shared reference for the routes_map
+        let stream = stream.unwrap(); 
         let routes_clone = Arc::clone(&routes);
-
-        // creating a new thread
-        let handle = thread::spawn( move || { 
-            let stream = stream.unwrap(); 
-    
-            // reading + parsing request
-            let request = Request::new(&stream); 
-            // routing
-            let response = router(&request, &routes_clone);
-
-            // responding 
-            response.write_all(&stream).unwrap();
-        });
-        handles.push(handle);
+        pool.execute(Box::new(move || { 
+            handle_client(stream, routes_clone);
+        }));
     }
-
-    // wait for all the thread to complete execution
-    for handle in handles { 
-        handle.join().unwrap(); 
-    }
-
+  
     Ok(())
 }
